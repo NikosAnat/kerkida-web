@@ -181,10 +181,11 @@ td a:hover{color:var(--accenttext)}
 .mapbox{position:relative;height:min(68dvh,640px);border-radius:var(--radius);overflow:hidden;border:1px solid var(--line)}
 #map{position:absolute;inset:0}
 .credit{position:absolute;z-index:2;top:7px;left:7px;right:7px;width:fit-content;padding:3px 7px;border-radius:6px;background:color-mix(in srgb,var(--surface) 86%,transparent);font-size:11px}
-#groundcard{position:absolute;z-index:3;left:8px;right:8px;bottom:0}
+#groundcard{position:absolute;z-index:3;left:8px;right:8px;bottom:8px;max-height:calc(100% - 46px);display:flex}
+#groundcard .ground{width:100%;margin:0;display:flex;flex-direction:column}
 .ground header{display:flex;align-items:center;gap:8px;padding:5px 3px 5px 12px;color:var(--accenttext)}
 .ground header span{flex:1;min-width:0;color:var(--text)}
-.groundgames{max-height:36dvh;overflow:auto}
+.groundgames{flex:1;min-height:0;overflow:auto}
 
 @media (max-width:760px){
   .shell{display:block;padding-bottom:calc(66px + env(safe-area-inset-bottom))}
@@ -200,5 +201,6 @@ td a:hover{color:var(--accenttext)}
   .hero{grid-template-columns:1fr 104px 1fr}
   .hero .score{font-size:25px}
   .pitches,.benches{grid-template-columns:1fr}
+  .mapbox{height:calc(100dvh - 366px - env(safe-area-inset-bottom));min-height:340px}
 }
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.scarf.travel{left:34%}.scarf.travel.second{display:none}}
