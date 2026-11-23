@@ -1,0 +1,12 @@
+{
+  "name": "Kerkida",
+  "short_name": "Kerkida",
+  "description": "Πάρε θέση στην Kerkida",
+  "lang": "el",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0B1F4B",
+  "theme_color": "#0B1F4B",
+  "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

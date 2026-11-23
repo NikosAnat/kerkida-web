@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="el" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Kerkida · Πάρε θέση</title>
+  <meta name="description" content="Αγώνες, μεταδόσεις, highlights και γήπεδα κοντά σου, φτιαγμένα για τον Έλληνα φίλαθλο.">
+  <meta name="theme-color" content="#0B1F4B">
+  <meta property="og:title" content="Πάρε θέση στην Kerkida">
+  <meta property="og:description" content="Αγώνες, μεταδόσεις, highlights και γήπεδα κοντά σου.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="intro" aria-hidden="true"><canvas></canvas></div>
+  <div class="shell">
+    <header class="top">
+      <a class="brand" href="#/" aria-label="Kerkida, αρχική"><img src="favicon.svg" alt="" width="36" height="36"><span><small>Πάρε θέση στην</small><b>Kerkida</b></span></a>
+      <a class="toplink" href="#/nearby" aria-label="Αγώνες κοντά μου" data-icon="Pin"></a>
+    </header>
+    <nav class="mainnav" aria-label="Κύρια πλοήγηση">
+      <a href="#/" data-nav="matches"><span data-icon="Matches"></span>Αγώνες</a>
+      <a href="#/tv" data-nav="tv"><span data-icon="Tv"></span>Στην TV</a>
+      <a href="#/leagues" data-nav="leagues"><span data-icon="Leagues"></span>Λίγκες</a>
+      <a href="#/nearby" data-nav="nearby" class="wide"><span data-icon="Pin"></span>Κοντά μου</a>
+      <a href="#/search" data-nav="search"><span data-icon="Search"></span>Αναζήτηση</a>
+      <a href="#/favourites" data-nav="favourites"><span data-icon="Star"></span>Αγαπημένα</a>
+    </nav>
+    <main id="view"></main>
+    <footer class="foot">
+      Ανεξάρτητο έργο, χωρίς σύνδεση με λίγκες, συλλόγους ή παρόχους. Δεν μεταδίδει αγώνες. Τα δεδομένα δίνονται χωρίς εγγύηση.
+    </footer>
+  </div>
+  <noscript><p style="padding:24px">Η Kerkida χρειάζεται JavaScript.</p></noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
