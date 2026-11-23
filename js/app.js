@@ -419,6 +419,7 @@ async function viewNearby() {
     if (state.nearbyMode === "map") {
       if (!document.getElementById("map")) {
         body.innerHTML = `${switcher}<div class="mapbox"><div id="map"></div><a class="credit" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenFreeMap · © OpenMapTiles · © OpenStreetMap</a><div id="groundcard"></div></div>`;
+        fitMap();
       }
       updateMap(place, found);
     } else {
@@ -446,6 +447,21 @@ async function viewNearby() {
   bar.innerHTML = "";
   paint(games);
 }
+
+/** On phones the map ends right above the bottom menu, whatever the browser's bars are doing. */
+function fitMap() {
+  const box = document.querySelector(".mapbox");
+  if (!box) return;
+  if (matchMedia("(max-width:760px)").matches) {
+    const menuTop = document.querySelector(".mainnav").getBoundingClientRect().top;
+    box.style.height = `${Math.max(300, Math.round(menuTop - (box.getBoundingClientRect().top + scrollY) - 8))}px`;
+  } else {
+    box.style.height = "";
+  }
+  activeMap?.resize();
+}
+
+addEventListener("resize", fitMap);
 
 function loadMapLibrary() {
   if (window.maplibregl) return Promise.resolve();
