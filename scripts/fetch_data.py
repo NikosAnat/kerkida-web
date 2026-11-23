@@ -12,6 +12,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 import unicodedata
 import urllib.error
 import xml.etree.ElementTree as ET
@@ -266,6 +267,216 @@ def build_highlights(now):
     return sorted(videos.values(), key=lambda item: -item["publishedMs"])
 
 
+GBL_PAGE = "https://www.esake.gr/el/action/EsakeResults?idchampionship=184645B9&idteam=&idseason=00000001&series={:02d}"
+GBL_SITE = "https://www.esake.gr"
+GBL_ROUNDS = 26
+OPEN_SITE = "https://www.the-sports.org/"
+OPEN_ROUND = OPEN_SITE + "ajax_php.php?majajax=resultats_manche_collectif&mancheid={}&langage=en"
+OPEN_LEAGUES = [
+    ("elite", "BASKETBALL", "basketball-greece-a2-ethniki-regular-season-2026-2027-results-eprd138798.html"),
+    ("volley-men", "VOLLEYBALL", "volleyball-greece-men-s-a1-ethniki-volleyball-regular-season-2026-2027-results-eprd139133.html"),
+    ("volley-women", "VOLLEYBALL", "volleyball-greece-women-s-a1-ethniki-regular-season-2026-2027-results-eprd139139.html"),
+]
+GREEK_MONTHS = {"Ιαν": 1, "Φεβ": 2, "Μαρ": 3, "Απρ": 4, "Μαϊ": 5, "Μαι": 5, "Μάι": 5, "Ιουν": 6, "Ιουλ": 7, "Αυγ": 8, "Σεπ": 9, "Οκτ": 10, "Νοε": 11, "Δεκ": 12}
+ENGLISH_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+SEASON_START = 2026
+SETTLED_AFTER = dt.timedelta(days=3)
+
+
+def gently(url):
+    """These are small sites, so requests stay well apart."""
+    time.sleep(1.5)
+    return fetch(url, 40).decode("utf-8", "replace")
+
+
+def settled(games, now):
+    """A round whose results are in and days old is not read again."""
+    if not games:
+        return False
+    limit = (now - SETTLED_AFTER).timestamp() * 1000
+    return all(g.get("homeScore") is not None and g.get("awayScore") is not None and g["kickoff"] < limit for g in games)
+
+
+def parse_gbl(page):
+    games = []
+    for block in page.split('<div class="esake-program-game">')[1:]:
+        game_id = re.search(r"idgame=([0-9A-Za-z]+)", block)
+        round_no = re.search(r"<h5>\s*(\d+)", block)
+        if not game_id or not round_no or "esake-program-game-final-score row" not in block:
+            continue
+        board = block.split("esake-program-game-final-score row", 1)[1].split("esake-program-game-hidden-row", 1)[0]
+        cells = re.split(r'<div class="col-lg-', board)[1:]
+        if len(cells) < 3:
+            continue
+
+        def team(cell):
+            badge = re.search(r'src="(/dat/esaketeam/([0-9A-Za-z]+)/[^"]+)"', cell)
+            name = re.search(r"<span>(.*?)</span>", cell, re.S)
+            return {"id": f"gbl-{badge.group(2)}", "name": clean_html(name.group(1)), "logo": GBL_SITE + badge.group(1)} if badge and name else None
+
+        def info(icon):
+            found = re.search(rf'/skn/{icon}\.svg"[^>]*>([^<]*)<', block)
+            return clean_html(found.group(1)) if found else ""
+
+        home, away = team(cells[0]), team(cells[2])
+        when = re.search(r"(\d{1,2})\s+(\w+)\s*-\s*(\d{1,2}):(\d{2})", info("clock"))
+        month = when and (GREEK_MONTHS.get(when.group(2)[:4]) or GREEK_MONTHS.get(when.group(2)[:3]))
+        if not home or not away or not month:
+            continue
+        year = SEASON_START if month >= 8 else SEASON_START + 1
+        try:
+            kickoff = dt.datetime(year, month, int(when.group(1)), int(when.group(3)), int(when.group(4)), tzinfo=ATHENS)
+        except ValueError:
+            continue
+        side = re.search(r"<span>(.*?)</span>", cells[1], re.S)
+        score = re.search(r"(\d{1,3})\s*(?:&nbsp;)?\s*-\s*(?:&nbsp;)?\s*(\d{1,3})", side.group(1)) if side else None
+        games.append({"id": game_id.group(1), "round": int(round_no.group(1)), "kickoff": int(kickoff.timestamp() * 1000), "home": home, "away": away,
+                      "homeScore": int(score.group(1)) if score else None, "awayScore": int(score.group(2)) if score else None,
+                      "venue": info("pointer") or None, "channel": info("tv") or None})
+    return games
+
+
+def open_crests(page):
+    return {number: f"{OPEN_SITE}images/equipes/{number}.{ext}" for number, ext in re.findall(r"images/equipes/(\d+)\.(png|jpg)", page) if number.strip("0")}
+
+
+def open_name(raw):
+    return html_text.unescape(raw).strip()
+
+
+def parse_open_round(page, round_no, crests):
+    games = []
+    day = None
+    for row in page.split("<tr"):
+        head = re.search(r'daterenc">(\d{1,2}) (\w+) (\d{4})', row)
+        if head:
+            day = dt.date(int(head.group(3)), ENGLISH_MONTHS.index(head.group(2)) + 1, int(head.group(1))) if head.group(2) in ENGLISH_MONTHS else None
+            continue
+        sides = re.findall(r'identity-equ(\d+)\.html" title="([^"]+)"', row)
+        if len(sides) < 2 or not day:
+            continue
+        clock = re.search(r'tdcol-15">(\d{1,2})h(\d{2})', row)
+        score = re.search(r"<b>(\d{1,3}) - (\d{1,3})</b>", row)
+        begin = dt.datetime(day.year, day.month, day.day, int(clock.group(1)) if clock else 12, int(clock.group(2)) if clock else 0, tzinfo=ATHENS)
+        team = lambda s: {"id": f"ts-{s[0]}", "name": open_name(s[1]), "logo": crests.get(s[0])}
+        game = {"id": f"{round_no}-{sides[0][0]}-{sides[1][0]}", "round": round_no, "kickoff": int(begin.timestamp() * 1000), "home": team(sides[0]), "away": team(sides[1]),
+                "homeScore": int(score.group(1)) if score else None, "awayScore": int(score.group(2)) if score else None}
+        if not clock:
+            game["noTime"] = True
+        games.append(game)
+    return games
+
+
+def parse_open_table(page, crests):
+    if 'id="tab110"' not in page:
+        return []
+    general = page.split('id="tab110"', 1)[1].split('id="tab120"', 1)[0]
+    rows = []
+    for row in general.split("<tr"):
+        side = re.search(r'identity-equ(\d+)\.html" title="([^"]+)"', row)
+        numbers = [int(n.lstrip("+")) for n in re.findall(r'<td class="tdcol-\d+">([+-]?\d+)</td>', row)]
+        if side and len(numbers) >= 8:
+            rows.append({"rank": numbers[0], "team": {"id": f"ts-{side.group(1)}", "name": open_name(side.group(2)), "logo": crests.get(side.group(1))},
+                         "played": numbers[2], "won": numbers[3], "drawn": 0, "lost": numbers[4], "diff": numbers[7], "points": numbers[1]})
+    return rows
+
+
+def computed_table(games, now, final_after, volleyball):
+    """GBL gives 2 for a win and 1 for a loss. Volleyball gives 3-0, or 2-1 after five sets."""
+    teams = {}
+    limit = now.timestamp() * 1000 - final_after * 60_000
+    for game in games:
+        for side in (game["home"], game["away"]):
+            teams.setdefault(side["id"], {"team": side, "played": 0, "won": 0, "drawn": 0, "lost": 0, "diff": 0, "points": 0, "_for": 0})
+        a, b = game.get("homeScore"), game.get("awayScore")
+        if a is None or b is None or a == b or game["kickoff"] > limit:
+            continue
+        for me, mine, theirs in ((game["home"], a, b), (game["away"], b, a)):
+            row = teams[me["id"]]
+            won = mine > theirs
+            row["played"] += 1
+            row["won" if won else "lost"] += 1
+            row["diff"] += mine - theirs
+            row["_for"] += mine
+            if volleyball:
+                row["points"] += (2 if won else 1) if min(a, b) == 2 else (3 if won else 0)
+            else:
+                row["points"] += 2 if won else 1
+    ordered = sorted(teams.values(), key=lambda r: (-r["points"], -r["diff"], -r["_for"], r["team"]["name"]))
+    return [{**{k: v for k, v in row.items() if k != "_for"}, "rank": index + 1} for index, row in enumerate(ordered)]
+
+
+def previous_greek():
+    try:
+        data = json.loads(fetch(f"{SITE}/greek.json", 30))
+        return {league["id"]: league for league in data.get("leagues", [])}
+    except (OSError, ValueError):
+        return {}
+
+
+def build_gbl(now, old):
+    games = []
+    failures = 0
+    for number in range(1, GBL_ROUNDS + 1):
+        saved = [g for g in old.get("games", []) if g["round"] == number]
+        if settled(saved, now):
+            games += saved
+            continue
+        try:
+            games += parse_gbl(gently(GBL_PAGE.format(number))) or saved
+        except OSError as error:
+            print(f"gbl round {number}: {error}", file=sys.stderr)
+            games += saved
+            failures += 1
+            if failures >= 3:
+                games += [g for g in old.get("games", []) if g["round"] > number]
+                break
+    if not games:
+        raise OSError("no GBL games")
+    return {"id": "gbl", "games": sorted(games, key=lambda g: g["kickoff"]), "table": computed_table(games, now, 150, False)}
+
+
+def build_open(league_id, sport, page_name, now, old):
+    index = gently(OPEN_SITE + page_name)
+    crests = open_crests(index)
+    rounds = {}
+    for key, number in re.findall(r'<option value="mancheid=(\d+)"(?: selected)?>Round (\d+)', index):
+        rounds.setdefault(int(number), key)
+    games = []
+    for number, key in sorted(rounds.items()):
+        saved = [g for g in old.get("games", []) if g["round"] == number]
+        if settled(saved, now):
+            games += saved
+            continue
+        try:
+            games += parse_open_round(gently(OPEN_ROUND.format(key)), number, crests) or saved
+        except OSError as error:
+            print(f"{league_id} round {number}: {error}", file=sys.stderr)
+            games += saved
+    if not games:
+        raise OSError(f"no {league_id} games")
+    # The source's own table counts two points a win in every sport, so volleyball is worked out from the sets.
+    table = computed_table(games, now, 90, True) if sport == "VOLLEYBALL" else parse_open_table(index, crests) or computed_table(games, now, 90, False)
+    return {"id": league_id, "games": sorted(games, key=lambda g: g["kickoff"]), "table": table}
+
+
+def build_greek(now):
+    old = previous_greek()
+    leagues = []
+    jobs = [("gbl", lambda: build_gbl(now, old.get("gbl", {})))]
+    jobs += [(lid, (lambda l=lid, s=sport, p=page: build_open(l, s, p, now, old.get(l, {})))) for lid, sport, page in OPEN_LEAGUES]
+    for league_id, job in jobs:
+        try:
+            league = job()
+            print(league_id, len(league["games"]), "games", len(league["table"]), "teams")
+            leagues.append(league)
+        except (OSError, ValueError) as error:
+            print(f"{league_id}: keeping the previous version ({error})", file=sys.stderr)
+            if league_id in old:
+                leagues.append(old[league_id])
+    return leagues
+
+
 def publish(file, key, builder, now):
     target = DATA / file
     try:
@@ -288,3 +499,4 @@ if __name__ == "__main__":
     DATA.mkdir(exist_ok=True)
     publish("tv.json", "items", build_tv, moment)
     publish("highlights.json", "videos", build_highlights, moment)
+    publish("greek.json", "leagues", build_greek, moment)

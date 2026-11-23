@@ -1,4 +1,5 @@
-import { venueKey } from "./logic.js";
+import { greekStatus, venueKey } from "./logic.js";
+import { GBL_TOWNS, OPEN_TOWNS } from "./towns.js";
 
 const SITE = "https://site.api.espn.com/apis/site/v2/sports";
 const STANDINGS = "https://site.api.espn.com/apis/v2/sports";
@@ -9,6 +10,7 @@ export const SPORTS = [
   { id: "BASKETBALL", label: "Μπάσκετ", icon: "Basketball", motion: "bounce" },
   { id: "TENNIS", label: "Τένις", icon: "Tennis", motion: "swing" },
   { id: "MOTOR", label: "Μηχανοκίνητα", icon: "RaceFlag", motion: "wave" },
+  { id: "VOLLEYBALL", label: "Βόλεϊ", icon: "Volleyball", motion: "roll" },
   { id: "AMERICAN_FOOTBALL", label: "NFL", icon: "AmericanFootball", motion: "flip" },
   { id: "HOCKEY", label: "NHL", icon: "Hockey", motion: "swing" },
   { id: "BASEBALL", label: "MLB", icon: "Baseball", motion: "roll" },
@@ -30,6 +32,10 @@ export const LEAGUES = [
   soccer("por.1", "Primeira Liga", "Πορτογαλία"),
   soccer("tur.1", "Süper Lig", "Τουρκία"),
   soccer("eng.2", "Championship", "Αγγλία"),
+  { id: "gbl", name: "Stoiximan GBL", country: "Ελλάδα", sport: "BASKETBALL", kind: "greek", finalAfter: 150, towns: GBL_TOWNS },
+  { id: "elite", name: "Elite League", country: "Ελλάδα", sport: "BASKETBALL", kind: "greek", finalAfter: 90, towns: OPEN_TOWNS },
+  { id: "volley-men", name: "Volley League Ανδρών", country: "Ελλάδα", sport: "VOLLEYBALL", kind: "greek", finalAfter: 90, towns: OPEN_TOWNS },
+  { id: "volley-women", name: "Volley League Γυναικών", country: "Ελλάδα", sport: "VOLLEYBALL", kind: "greek", finalAfter: 90, towns: OPEN_TOWNS },
   { id: "euroleague", code: "E", name: "EuroLeague", country: "Ευρώπη", sport: "BASKETBALL", kind: "euro" },
   { id: "eurocup", code: "U", name: "EuroCup", country: "Ευρώπη", sport: "BASKETBALL", kind: "euro" },
   { id: "nba", path: "basketball/nba", name: "NBA", country: "ΗΠΑ", sport: "BASKETBALL", kind: "team" },
@@ -43,6 +49,7 @@ export const LEAGUES = [
 ];
 
 export const leagueById = (id) => LEAGUES.find((league) => league.id === id);
+export const hasTable = (league) => league?.kind === "team" || league?.kind === "greek";
 
 const memory = new Map();
 
@@ -209,7 +216,42 @@ async function euroGames(league, date) {
   }).filter(Boolean);
 }
 
+let greekFile;
+const greekData = () => (greekFile ??= fetch("data/greek.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((d) => d || { updated: 0, leagues: [] }));
+
+async function greekLeague(id) {
+  const data = await greekData();
+  return data.leagues.find((league) => league.id === id) || { games: [], table: [] };
+}
+
+function greekMatch(game, league) {
+  const status = greekStatus(game, Date.now(), league.finalAfter);
+  const show = status !== "SCHEDULED";
+  return {
+    id: `${league.id}~${game.id}`,
+    eventId: game.id,
+    sport: league.sport,
+    league: { id: league.id, name: league.name },
+    home: game.home,
+    away: game.away,
+    kickoff: game.kickoff,
+    noTime: !!game.noTime,
+    status,
+    detail: `Αγωνιστική ${game.round}`,
+    homeScore: show ? game.homeScore ?? null : null,
+    awayScore: show ? game.awayScore ?? null : null,
+    venue: game.venue || null,
+    channel: game.channel || null,
+    linkable: true,
+    basic: true,
+  };
+}
+
 async function leagueDay(league, date) {
+  if (league.kind === "greek") {
+    const data = await greekLeague(league.id);
+    return data.games.filter((game) => sameDay(game.kickoff, date)).map((game) => greekMatch(game, league));
+  }
   if (league.kind === "euro") return (await euroGames(league, date)).filter((game) => sameDay(game.kickoff, date));
   // A local evening can fall on the source's previous or next day.
   const days = league.sport === "FOOTBALL" ? [-1, 0] : [-1, 0, 1];
@@ -251,6 +293,11 @@ export async function loadDay(leagues, date, onProgress) {
 
 export async function matchDetails(leagueId, eventId) {
   const league = leagueById(leagueId);
+  if (league.kind === "greek") {
+    const game = (await greekLeague(leagueId)).games.find((item) => item.id === eventId);
+    if (!game) throw new Error("No match");
+    return { match: greekMatch(game, league), events: [], home: null, away: null, basic: true };
+  }
   const root = await getJson(`${SITE}/${league.path}/summary?event=${encodeURIComponent(eventId)}`, 25_000);
   const header = root.header;
   const competition = header?.competitions?.[0];
@@ -284,6 +331,10 @@ export async function matchDetails(leagueId, eventId) {
 
 export async function standings(leagueId) {
   const league = leagueById(leagueId);
+  if (league?.kind === "greek") {
+    const rows = (await greekLeague(leagueId)).table || [];
+    return rows.length ? [{ name: league.name, rows }] : [];
+  }
   if (!league?.path || league.kind !== "team") return [];
   const root = await getJson(`${STANDINGS}/${league.path}/standings`, 300_000);
   const groups = root.children?.length ? root.children : [root];
@@ -307,6 +358,13 @@ export async function standings(leagueId) {
 
 export async function teamSchedule(leagueId, teamId) {
   const league = leagueById(leagueId);
+  if (league.kind === "greek") {
+    const data = await greekLeague(leagueId);
+    const games = data.games.filter((game) => game.home.id === teamId || game.away.id === teamId).map((game) => greekMatch(game, league)).sort((a, b) => a.kickoff - b.kickoff);
+    const team = games[0] && (games[0].home.id === teamId ? games[0].home : games[0].away);
+    if (!team) throw new Error("No team");
+    return { name: team.name, logo: team.logo || null, games };
+  }
   const root = await getJson(`${SITE}/${league.path}/teams/${encodeURIComponent(teamId)}/schedule`, 300_000);
   return {
     name: root.team?.displayName || "",
@@ -329,6 +387,9 @@ export async function groundFinder() {
   return (match) => {
     const key = match.venue ? venueKey(match.venue) : data.teams[match.home.id];
     const found = data.venues[key];
-    return found ? { name: found.n, city: found.c, lat: found.a, lng: found.o } : null;
+    if (found) return { name: found.n, city: found.c, lat: found.a, lng: found.o };
+    const towns = leagueById(match.league.id)?.towns;
+    const town = towns?.find(([name]) => match.home.name.toLowerCase().includes(name.toLowerCase()));
+    return town ? { name: match.venue || `${town[1]} (κατά προσέγγιση)`, city: town[1], lat: town[2], lng: town[3] } : null;
   };
 }

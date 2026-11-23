@@ -304,3 +304,11 @@ export function pitchLines(players, formation) {
   const ordered = lines.map((line) => [...line].sort((a, b) => lateral(a) - lateral(b)));
   return keepers.length ? [keepers, ...ordered] : ordered;
 }
+
+/** These sources have no live feed, so a score only counts as final well after the start. */
+export function greekStatus(game, now, finalAfterMinutes) {
+  const hasScore = game.homeScore !== null && game.homeScore !== undefined && game.awayScore !== null && game.awayScore !== undefined;
+  if (game.noTime) return hasScore ? "FINISHED" : now < game.kickoff ? "SCHEDULED" : "UNKNOWN";
+  if (now < game.kickoff) return "SCHEDULED";
+  return hasScore && now - game.kickoff >= finalAfterMinutes * 60_000 ? "FINISHED" : "UNKNOWN";
+}

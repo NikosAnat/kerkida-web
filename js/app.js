@@ -16,7 +16,7 @@ const dayLabel = (ms) => new Date(ms).toLocaleDateString("el-GR", { weekday: "sh
 const longDay = (ms) => new Date(ms).toLocaleDateString("el-GR", { weekday: "long", day: "numeric", month: "long" });
 const initial = (name = "") => (name.match(/[\p{L}\p{N}]/u)?.[0] || "").toUpperCase();
 /** The club's crest from the score source, with its initial underneath if the image is unavailable. */
-const crest = (team, extra = "") => `<i class="badge ${extra}">${esc(initial(team.name))}${team.logo ? `<img src="${esc(team.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}</i>`;
+const crest = (team, extra = "") => `<i class="badge ${extra}"><span>${esc(initial(team.name))}</span>${team.logo ? `<img src="${esc(team.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onload="this.parentNode.classList.add('loaded')" onerror="this.remove()">` : ""}</i>`;
 
 const state = {
   date: today(),
@@ -56,7 +56,8 @@ const message = (title, body = "", iconName = "Info") => `<div class="message">$
 
 function scoreCell(match) {
   const hidden = isHidden(match);
-  if (match.status === "SCHEDULED") return `<b class="score">${time(match.kickoff)}</b><small>Έναρξη</small>`;
+  if (match.status === "SCHEDULED") return `<b class="score">${match.noTime ? "–" : time(match.kickoff)}</b><small>Έναρξη</small>`;
+  if (match.status === "UNKNOWN") return `<b class="score">–</b><small>Χωρίς live σκορ</small>`;
   if (match.status === "POSTPONED") return `<b class="score">–</b><small>Αναβολή</small>`;
   if (match.status === "CANCELLED") return `<b class="score">–</b><small>Ακύρωση</small>`;
   if (hidden) return `<b class="score">? – ?</b><small>Κρυφό</small>`;
@@ -65,8 +66,14 @@ function scoreCell(match) {
   return `<b class="score ${live ? "live" : ""}">${esc(main)}</b><small class="${live ? "livetext" : ""}">${live ? esc(match.clock || "Ζωντανά") : "Τελικό"}</small>`;
 }
 
+/** Listings first. The Greek basketball league also names the channel on its own page. */
+function matchChannels(match) {
+  const found = channelsFor(match, listings);
+  return found.length || !match.channel ? found : [match.channel];
+}
+
 function channelLine(match) {
-  const channels = channelsFor(match, listings);
+  const channels = matchChannels(match);
   if (!channels.length) return "";
   const best = [...channels].sort((a, b) => Number(state.mine.has(networkOf(b))) - Number(state.mine.has(networkOf(a))))[0];
   const tag = state.mine.has(networkOf(best)) ? "το έχεις" : isPaid(best) ? "Συνδρομητικό" : "Ελεύθερο";
@@ -103,7 +110,7 @@ function leagueGroups(matches) {
 function groupedList(matches) {
   return leagueGroups(matches).map(({ league, games }) => {
     const known = api.leagueById(league.id);
-    const canOpen = known?.kind === "team";
+    const canOpen = api.hasTable(known);
     const fav = state.favLeagues.includes(league.id);
     return `<section class="card"><header class="cardhead">
       <i class="badge square">${esc(initial(league.name))}</i>
@@ -131,7 +138,7 @@ const filterRow = () => `<div class="strip chips">${FILTERS.map(([id, label]) =>
 function applyFilter(matches) {
   if (state.filter === "live") return matches.filter((m) => m.status === "LIVE");
   if (state.filter === "fav") return matches.filter((m) => state.favLeagues.includes(m.league.id) || isFavTeam(m.home.id) || isFavTeam(m.away.id));
-  if (state.filter === "tv") return matches.filter((m) => channelsFor(m, listings).length);
+  if (state.filter === "tv") return matches.filter((m) => matchChannels(m).length);
   return matches;
 }
 
@@ -220,9 +227,13 @@ async function viewMatch(leagueId, eventId, wanted) {
   listings = guide.items || [];
   const match = data.match;
   const videos = match.status === "FINISHED" ? videosFor(match, videoFile.videos || []) : [];
-  const channels = channelsFor(match, listings);
-  const available = [["events", "Φάσεις"], ...(videos.length ? [["highlights", "Highlights"]] : []), ["lineups", "Παίκτες"], ["table", "Βαθμολογία"], ["info", "Στοιχεία"]];
-  let tab = available.some(([id]) => id === wanted) ? wanted : "events";
+  const channels = matchChannels(match);
+  const highlightsTab = videos.length ? [["highlights", "Highlights"]] : [];
+  // The Greek league pages give results only, with no events or line-ups.
+  const available = data.basic
+    ? [["table", "Βαθμολογία"], ...highlightsTab, ["info", "Στοιχεία"]]
+    : [["events", "Φάσεις"], ...highlightsTab, ["lineups", "Παίκτες"], ["table", "Βαθμολογία"], ["info", "Στοιχεία"]];
+  let tab = available.some(([id]) => id === wanted) ? wanted : available[0][0];
   const hiddenNotice = message("Ο αγώνας είναι κρυφός", "Πάτα το μάτι για να δεις σκορ, φάσεις και βαθμούς.", "EyeOff");
   const paint = () => {
     const hidden = isHidden(match);
@@ -287,7 +298,7 @@ async function viewTv() {
 
 function viewLeagues() {
   ++renderToken;
-  const open = api.LEAGUES.filter((league) => league.kind === "team");
+  const open = api.LEAGUES.filter(api.hasTable);
   const groups = [...new Set(open.map((l) => l.sport))];
   view.innerHTML = `<header class="pagehead"><h1>Λίγκες</h1></header>${groups.map((sport) => `<h2 class="section">${esc(api.SPORTS.find((s) => s.id === sport).label)}</h2><section class="card">${open.filter((l) => l.sport === sport).map((league) => `<div class="listrow"><a href="#/league/${encodeURIComponent(league.id)}"><i class="badge square">${esc(initial(league.name))}</i><span><b>${esc(league.name)}</b><small>${esc(league.country || "")}</small></span></a><button class="iconbtn ${state.favLeagues.includes(league.id) ? "on" : ""}" data-fav-league="${esc(league.id)}" aria-label="Αγαπημένη λίγκα">${icon("Star", 20)}</button></div>`).join("")}</section>`).join("")}`;
 }
@@ -324,7 +335,7 @@ let teamIndex = null;
 
 async function buildTeamIndex() {
   if (teamIndex) return teamIndex;
-  const leagues = api.LEAGUES.filter((league) => league.kind === "team");
+  const leagues = api.LEAGUES.filter(api.hasTable);
   const lists = await Promise.all(leagues.map((league) => api.standings(league.id).then((groups) => groups.flatMap((group) => group.rows.map((row) => ({ ...row.team, leagueId: league.id, league: league.name })))).catch(() => [])));
   const seen = new Set();
   teamIndex = lists.flat().filter((team) => !seen.has(`${team.leagueId}:${team.id}`) && seen.add(`${team.leagueId}:${team.id}`));
@@ -347,7 +358,7 @@ async function viewSearch() {
       const teams = await buildTeamIndex();
       if (token !== renderToken || input.value.trim() !== q) return;
       const foundTeams = teams.filter((team) => matchesQuery(team.name, q)).slice(0, 20);
-      const foundLeagues = api.LEAGUES.filter((league) => league.kind === "team" && matchesQuery(league.name, q));
+      const foundLeagues = api.LEAGUES.filter((league) => api.hasTable(league) && matchesQuery(league.name, q));
       box.innerHTML = foundTeams.length || foundLeagues.length ? `${foundTeams.length ? `<h2 class="section">Ομάδες</h2><section class="card">${foundTeams.map((team) => `<div class="listrow"><a href="#/team/${encodeURIComponent(team.leagueId)}/${encodeURIComponent(team.id)}">${crest(team)}<span><b>${esc(team.name)}</b><small>${esc(team.league)}</small></span></a></div>`).join("")}</section>` : ""}${foundLeagues.length ? `<h2 class="section">Λίγκες</h2><section class="card">${foundLeagues.map((league) => `<div class="listrow"><a href="#/league/${encodeURIComponent(league.id)}"><i class="badge square">${esc(initial(league.name))}</i><span><b>${esc(league.name)}</b><small>${esc(league.country || "")}</small></span></a></div>`).join("")}</section>` : ""}` : message("Δεν βρέθηκε κάτι", "Δοκίμασε άλλη γραφή.", "Search");
     }, 250);
   });
@@ -370,7 +381,7 @@ function viewFavourites() {
 
 const PLACES = [["Πάτρα", 38.2466, 21.7346], ["Αίγιο", 38.2505, 22.0852], ["Αθήνα", 37.9838, 23.7275], ["Πειραιάς", 37.9429, 23.6469], ["Θεσσαλονίκη", 40.6401, 22.9444], ["Ηράκλειο", 35.3387, 25.1442], ["Λάρισα", 39.639, 22.4191], ["Βόλος", 39.3622, 22.942], ["Ιωάννινα", 39.665, 20.8537], ["Τρίπολη", 37.5089, 22.3794], ["Καλαμάτα", 37.0389, 22.1142], ["Αγρίνιο", 38.6214, 21.4078], ["Χανιά", 35.5138, 24.018], ["Ρόδος", 36.4341, 28.2176], ["Ξάνθη", 41.1349, 24.888], ["Λιβαδειά", 38.4361, 22.875]];
 const RADII = [10, 25, 50, 100, 200, 500];
-const NEARBY_LEAGUES = ["gre.1", "uefa.champions", "uefa.europa", "uefa.europa.conf", "euroleague", "eurocup"];
+const NEARBY_LEAGUES = ["gre.1", "uefa.champions", "uefa.europa", "uefa.europa.conf", "euroleague", "eurocup", "gbl", "elite", "volley-men", "volley-women"];
 let nearbyGames = null;
 
 async function loadNearby(onProgress) {

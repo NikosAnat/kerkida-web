@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  channelKey, channelName, channelsFor, distanceKm, groupByGround, matchScore, matchesQuery, pitchLines, radiusRing, teamSimilarity, videosFor,
+  channelKey, channelName, channelsFor, distanceKm, greekStatus, groupByGround, matchScore, matchesQuery, pitchLines, radiusRing, teamSimilarity, videosFor,
 } from "../js/logic.js";
 
 const at = (iso) => Date.parse(iso);
@@ -87,4 +87,14 @@ test("a formation lays out the eleven", () => {
   assert.equal(lines[0][0].position, "G");
   assert.deepEqual(lines[1].map((p) => p.position), ["LB", "CD-L", "CD-R", "RB"]);
   assert.equal(lines[4][0].position, "F");
+});
+
+test("a Greek result counts as final only well after the start", () => {
+  const kickoff = at("2026-11-22T17:00:00Z");
+  const scored = { kickoff, homeScore: 80, awayScore: 70 };
+  assert.equal(greekStatus(scored, kickoff - 1000, 150), "SCHEDULED");
+  assert.equal(greekStatus(scored, kickoff + 60 * 60_000, 150), "UNKNOWN");
+  assert.equal(greekStatus(scored, kickoff + 151 * 60_000, 150), "FINISHED");
+  assert.equal(greekStatus({ kickoff, homeScore: null, awayScore: null }, kickoff + 300 * 60_000, 150), "UNKNOWN");
+  assert.equal(greekStatus({ ...scored, noTime: true }, kickoff - 1000, 90), "FINISHED");
 });

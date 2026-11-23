@@ -1,5 +1,6 @@
 data/tv.json
 data/highlights.json
+data/greek.json
 _site/
 __pycache__/
 *.log
