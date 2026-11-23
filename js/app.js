@@ -467,7 +467,6 @@ const pinsJson = (pins) => ({ type: "FeatureCollection", features: pins.map((pin
 async function updateMap(place, found) {
   const pins = groupByGround(found);
   const ring = radiusRing(place.lat, place.lng, state.radius);
-  const bounds = ring.reduce((box, point) => box.extend(point), new (window.maplibregl?.LngLatBounds || class { extend() { return this; } })(ring[0], ring[0]));
   if (activeMap) {
     activeMap.__pins = pins;
     if (activeMap.isStyleLoaded() && activeMap.getSource("grounds")) activeMap.getSource("grounds").setData(pinsJson(pins));
