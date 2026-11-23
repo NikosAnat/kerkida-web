@@ -17,7 +17,12 @@
   <div class="shell">
     <header class="top">
       <a class="brand" href="#/" aria-label="Kerkida, αρχική"><img src="favicon.svg" alt="" width="36" height="36"><span><small>Πάρε θέση στην</small><b>Kerkida</b></span></a>
-      <a class="toplink" href="#/nearby" aria-label="Αγώνες κοντά μου" data-icon="Pin"></a>
+      <span class="toplinks">
+        <a href="#/weekend" aria-label="Το Σαββατοκύριακό μου" data-icon="Calendar"></a>
+        <a href="#/nearby" class="mobileonly" aria-label="Αγώνες κοντά μου" data-icon="Pin"></a>
+        <a href="#/fantasy" aria-label="Fantasy Premier League" data-icon="Trophy"></a>
+        <a href="#/settings" aria-label="Ρυθμίσεις" data-icon="Settings"></a>
+      </span>
     </header>
     <nav class="mainnav" aria-label="Κύρια πλοήγηση">
       <a href="#/" data-nav="matches"><span data-icon="Matches"></span>Αγώνες</a>
@@ -26,6 +31,10 @@
       <a href="#/nearby" data-nav="nearby" class="wide"><span data-icon="Pin"></span>Κοντά μου</a>
       <a href="#/search" data-nav="search"><span data-icon="Search"></span>Αναζήτηση</a>
       <a href="#/favourites" data-nav="favourites"><span data-icon="Star"></span>Αγαπημένα</a>
+      <a href="#/weekend" data-nav="weekend" class="wide"><span data-icon="Calendar"></span>Σαββατοκύριακο</a>
+      <a href="#/fantasy" data-nav="fantasy" class="wide"><span data-icon="Trophy"></span>Fantasy</a>
+      <a href="#/season" data-nav="season" class="wide"><span data-icon="Check"></span>Η σεζόν μου</a>
+      <a href="#/settings" data-nav="settings" class="wide"><span data-icon="Settings"></span>Ρυθμίσεις</a>
     </nav>
     <main id="view"></main>
     <footer class="foot">

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { buildPreview, detectAlerts, fantasyPoints, icsFile, leaveAt, lineupRatings, markPicks, rating, seasonSummary, weekendDays, worth } from "../js/features.js";
 import {
   channelKey, channelName, channelsFor, distanceKm, greekStatus, groupByGround, matchScore, matchesQuery, pitchLines, radiusRing, teamSimilarity, videosFor,
 } from "../js/logic.js";
@@ -97,4 +98,80 @@ test("a Greek result counts as final only well after the start", () => {
   assert.equal(greekStatus(scored, kickoff + 151 * 60_000, 150), "FINISHED");
   assert.equal(greekStatus({ kickoff, homeScore: null, awayScore: null }, kickoff + 300 * 60_000, 150), "UNKNOWN");
   assert.equal(greekStatus({ ...scored, noTime: true }, kickoff - 1000, 90), "FINISHED");
+});
+
+test("the rating matches the app's formula", () => {
+  const r = rating({ minutes: 90, goals: 1, assists: 1, yellow: 1, shotsOn: 2 }, "FWD");
+  assert.equal(r.rating, 7.8);
+  assert.equal(r.lines[0].action, "goals");
+  assert.equal(rating({ minutes: 90, red: 5 }, "MID").rating, 3);
+  assert.equal(rating({ minutes: 10 }, "MID").smallSample, true);
+});
+
+test("only players who played are rated", () => {
+  const players = [
+    { id: "1", name: "A", position: "F", minutes: 90, stats: { totalGoals: 2, totalShots: 3, shotsOnTarget: 2 } },
+    { id: "2", name: "B", position: "CD", minutes: 0, stats: {} },
+  ];
+  const rated = lineupRatings(players, 1, 90);
+  assert.equal(rated.length, 1);
+  assert.equal(rated[0].rating, 8.3);
+});
+
+test("a preview finds form, streaks and the table", () => {
+  const team = (id) => ({ id, name: id });
+  const past = (day, h, a) => ({ id: `g${day}`, status: "FINISHED", kickoff: day, home: team("H"), away: team("X"), homeScore: h, awayScore: a });
+  const match = { id: "m", kickoff: 100, home: team("H"), away: team("A") };
+  const rows = [{ team: team("H"), points: 20 }, { team: team("A"), points: 18 }];
+  const p = buildPreview(match, [past(1, 3, 0), past(2, 2, 0), past(3, 2, 1)], [], rows);
+  assert.deepEqual(p.homeForm, ["W", "W", "W"]);
+  assert.ok(p.insights.some((line) => line.includes("3 συνεχόμενες")));
+  assert.ok(p.insights.some((line) => line.includes("2 βαθμοί")));
+});
+
+test("a top-four clash is worth watching", () => {
+  const row = (id, rank, points) => ({ team: { id }, rank, points });
+  const rows = [row("a", 1, 30), row("b", 2, 28), row("c", 9, 10), row("d", 10, 2)];
+  assert.equal(worth({ home: { id: "a" }, away: { id: "b" } }, rows).level, "TOP");
+  assert.equal(worth({ home: { id: "a" }, away: { id: "d" } }, rows), null);
+});
+
+test("the weekend plan picks what does not overlap", () => {
+  assert.equal(weekendDays(new Date(2026, 10, 23)).map((d) => d.getDate()).join(), "28,29");
+  assert.equal(weekendDays(new Date(2026, 10, 29)).length, 1);
+  const plan = markPicks([{ key: "a", title: "A", startMs: 0, endMs: 100, score: 100 }, { key: "b", title: "B", startMs: 50, endMs: 150, score: 20 }, { key: "c", title: "C", startMs: 200, endMs: 300, score: 20 }]);
+  assert.deepEqual(plan.map((e) => e.isPick), [true, false, true]);
+  assert.equal(plan[1].clashesWith, "A");
+  assert.equal(leaveAt(10_000_000, 45), 10_000_000 - 3_600_000 - 1_200_000);
+});
+
+test("the season counts games, goals and grounds", () => {
+  const at2 = Date.UTC(2026, 10, 1);
+  const s = seasonSummary([{ home: "A", away: "B", league: "L", kickoff: at2, homeScore: 2, awayScore: 1, attended: true, venue: "G" }, { home: "A", away: "C", league: "L", kickoff: at2, homeScore: 0, awayScore: 0 }], 2026);
+  assert.equal(s.matches, 2);
+  assert.equal(s.goals, 3);
+  assert.equal(s.grounds, 1);
+  assert.equal(s.topTeams[0][0], "A");
+});
+
+test("alerts stay quiet on first sight and catch a comeback and a red card", () => {
+  const match = (h, a) => ({ home: { name: "H" }, away: { name: "A" }, homeScore: h, awayScore: a });
+  const first = detectAlerts(null, match(0, 1), []);
+  assert.equal(first.alerts.length, 0);
+  const next = detectAlerts(first.memory, match(2, 1), [{ minute: "70'", kind: "red-card", side: "away", player: "X" }]);
+  assert.equal(next.alerts.length, 2);
+  assert.equal(detectAlerts(next.memory, match(2, 1), [{ minute: "70'", kind: "red-card", side: "away", player: "X" }]).alerts.length, 0);
+});
+
+test("a calendar file is valid and escaped", () => {
+  const text = icsFile([{ id: "a~1", kickoff: Date.UTC(2026, 10, 28, 18), home: { name: "A, B" }, away: { name: "C" }, league: { name: "L" } }]);
+  assert.ok(text.startsWith("BEGIN:VCALENDAR\r\n"));
+  assert.ok(text.includes("DTSTART:20261128T180000Z"));
+  assert.ok(text.includes("SUMMARY:A\\, B – C"));
+});
+
+test("fantasy counts eleven and doubles the captain", () => {
+  const players = Array.from({ length: 12 }, (_, i) => i + 1);
+  const live = Object.fromEntries(players.map((id) => [id, { points: 2 }]));
+  assert.equal(fantasyPoints({ players, captain: 1 }, live).total, 24);
 });

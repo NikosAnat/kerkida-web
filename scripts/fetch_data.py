@@ -477,6 +477,154 @@ def build_greek(now):
     return leagues
 
 
+SPORTS_DB = "https://www.thesportsdb.com/api/v1/json/123"
+FPL = "https://fantasy.premierleague.com/api"
+FINAL_STATUS = {"FT", "AET", "PEN", "AP", "MATCH FINISHED", "FINISHED"}
+OFF_STATUS = {"PST", "POSTPONED", "CANC", "CANCELLED", "ABD", "ABANDONED"}
+MAX_LOWER_REQUESTS = 36
+
+
+def football_table(games, now):
+    teams = {}
+    limit = now.timestamp() * 1000 - 115 * 60_000
+    for game in games:
+        for side in (game["home"], game["away"]):
+            teams.setdefault(side["id"], {"team": side, "played": 0, "won": 0, "drawn": 0, "lost": 0, "diff": 0, "points": 0, "_for": 0})
+        a, b = game.get("homeScore"), game.get("awayScore")
+        if a is None or b is None or game["kickoff"] > limit or game.get("postponed"):
+            continue
+        for me, mine, theirs in ((game["home"], a, b), (game["away"], b, a)):
+            row = teams[me["id"]]
+            row["played"] += 1
+            row["diff"] += mine - theirs
+            row["_for"] += mine
+            key, points = ("won", 3) if mine > theirs else ("lost", 0) if mine < theirs else ("drawn", 1)
+            row[key] += 1
+            row["points"] += points
+    ordered = sorted(teams.values(), key=lambda r: (-r["points"], -r["diff"], -r["_for"], r["team"]["name"]))
+    return [{**{k: v for k, v in row.items() if k != "_for"}, "rank": index + 1} for index, row in enumerate(ordered)]
+
+
+def lower_kickoff(stamp, date):
+    if stamp:
+        try:
+            return int(dt.datetime.fromisoformat(stamp.replace("Z", "")[:19]).replace(tzinfo=dt.timezone.utc).timestamp() * 1000), False
+        except ValueError:
+            pass
+    if date:
+        try:
+            day = dt.date.fromisoformat(date)
+            return int(dt.datetime(day.year, day.month, day.day, 12, tzinfo=ATHENS).timestamp() * 1000), True
+        except ValueError:
+            pass
+    return None, False
+
+
+def lower_game(event_id, round_no, stamp, date, home, away, home_score, away_score, venue, status, teams):
+    kickoff, no_time = lower_kickoff(stamp, date)
+    if kickoff is None or not home or not away:
+        return None
+
+    def side(team_id):
+        team = teams.get(str(team_id), {})
+        return {"id": f"grl-{team_id}", "name": team.get("name") or "", "logo": team.get("badge")}
+
+    state = (status or "").strip().upper()
+    final = state in FINAL_STATUS or (not state and home_score not in (None, "") and away_score not in (None, ""))
+    to_int = lambda v: int(v) if str(v).lstrip("-").isdigit() else None
+    host = teams.get(str(home), {})
+    game = {"id": str(event_id), "round": int(round_no or 0), "kickoff": kickoff, "home": side(home), "away": side(away),
+            "homeScore": to_int(home_score) if final else None, "awayScore": to_int(away_score) if final else None, "venue": venue or host.get("venue")}
+    if no_time:
+        game["noTime"] = True
+    if state in OFF_STATUS:
+        game["postponed"] = True
+    if host.get("lat") is not None and host.get("lng") is not None:
+        game["ground"] = {"name": venue or host.get("venue") or host.get("name"), "lat": host["lat"], "lng": host["lng"]}
+    return game
+
+
+def build_lower(now):
+    pack = json.loads((ROOT / "scripts/greek_lower_base.json").read_text(encoding="utf-8"))
+    teams = {str(t["id"]): t for t in pack["teams"]}
+    by_league = {}
+    for event in pack["events"]:
+        game = lower_game(event["e"], event.get("r"), event.get("t"), event.get("d"), event.get("h"), event.get("a"), event.get("hs"), event.get("as"), event.get("v"), event.get("s"), teams)
+        if game:
+            by_league.setdefault(event["l"], {})[game["id"]] = game
+    try:
+        previous = {l["id"]: l for l in json.loads(fetch(f"{SITE}/lower.json", 30)).get("leagues", [])}
+    except (OSError, ValueError):
+        previous = {}
+    leagues = {l["id"]: l for l in pack["leagues"]}
+    for league_id, league in leagues.items():
+        store = by_league.setdefault(league["source"], {})
+        for game in previous.get(league_id, {}).get("games", []):
+            old = store.get(game["id"])
+            if not old or game.get("homeScore") is not None or old.get("homeScore") is None:
+                store[game["id"]] = game
+    requests = 0
+    until = (now + dt.timedelta(days=7)).timestamp() * 1000
+    for league in pack["leagues"]:
+        store = by_league.get(league["source"], {})
+        due = sorted({g["round"] for g in store.values() if g.get("homeScore") is None and not g.get("postponed") and g["kickoff"] < until})[-3:]
+        for number in due:
+            if requests >= MAX_LOWER_REQUESTS:
+                break
+            requests += 1
+            time.sleep(2.2)
+            try:
+                rows = json.loads(fetch(f"{SPORTS_DB}/eventsround.php?id={league['source']}&r={number}&s={pack['season']}", 30)).get("events") or []
+            except (OSError, ValueError) as error:
+                print(f"lower {league['id']} round {number}: {error}", file=sys.stderr)
+                continue
+            for row in rows:
+                if row.get("strSport") not in (None, "Soccer"):
+                    continue
+                game = lower_game(row.get("idEvent"), row.get("intRound") or number, row.get("strTimestamp"), row.get("dateEvent"), row.get("idHomeTeam"), row.get("idAwayTeam"),
+                                  row.get("intHomeScore"), row.get("intAwayScore"), row.get("strVenue"), row.get("strStatus"), teams)
+                if game:
+                    store[game["id"]] = game
+    out = []
+    for league in pack["leagues"]:
+        games = sorted(by_league.get(league["source"], {}).values(), key=lambda g: g["kickoff"])
+        if games:
+            out.append({"id": league["id"], "games": games, "table": football_table(games, now)})
+    print("lower requests", requests, "leagues", len(out))
+    return out
+
+
+def build_fpl(now):
+    boot = json.loads(fetch(f"{FPL}/bootstrap-static/", 60))
+    current = next((e for e in boot["events"] if e.get("is_current")), None)
+    upcoming = next((e for e in boot["events"] if e.get("is_next")), None)
+    players = [{"id": p["id"], "name": p["web_name"], "first": p["first_name"], "second": p["second_name"], "team": p["team"], "type": p["element_type"], "cost": p["now_cost"],
+                "status": p["status"], "news": p["news"], "chance": p.get("chance_of_playing_next_round"), "form": p["form"], "points": p["total_points"], "code": p["code"], "starts": p.get("starts", 0)}
+               for p in boot["elements"]]
+    live = {}
+    if current:
+        for element in json.loads(fetch(f"{FPL}/event/{current['id']}/live/", 60)).get("elements", []):
+            live[str(element["id"])] = {"points": element["stats"].get("total_points", 0), "minutes": element["stats"].get("minutes", 0)}
+    return [{"players": players, "teams": [{"id": t["id"], "name": t["name"], "short": t["short_name"]} for t in boot["teams"]], "live": live,
+             "gameweek": current["id"] if current else None, "nextGameweek": upcoming["id"] if upcoming else None, "deadline": upcoming["deadline_time"] if upcoming else None,
+             "updated": int(now.timestamp() * 1000)}]
+
+
+def publish_fpl(now):
+    target = DATA / "fpl.json"
+    try:
+        data = build_fpl(now)[0]
+        target.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        print("fpl.json", len(data["players"]))
+    except (OSError, ValueError, KeyError, StopIteration) as error:
+        print(f"fpl.json: keeping the previous version ({error})", file=sys.stderr)
+        try:
+            target.write_bytes(fetch(f"{SITE}/fpl.json", 30))
+        except OSError:
+            if not target.exists():
+                target.write_text(json.dumps({"players": [], "teams": [], "live": {}}), encoding="utf-8")
+
+
 def publish(file, key, builder, now):
     target = DATA / file
     try:
@@ -500,3 +648,5 @@ if __name__ == "__main__":
     publish("tv.json", "items", build_tv, moment)
     publish("highlights.json", "videos", build_highlights, moment)
     publish("greek.json", "leagues", build_greek, moment)
+    publish("lower.json", "leagues", build_lower, moment)
+    publish_fpl(moment)

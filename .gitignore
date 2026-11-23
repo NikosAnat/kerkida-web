@@ -1,6 +1,8 @@
 data/tv.json
 data/highlights.json
 data/greek.json
+data/lower.json
+data/fpl.json
 _site/
 __pycache__/
 *.log

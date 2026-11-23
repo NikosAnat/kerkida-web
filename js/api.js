@@ -11,9 +11,14 @@ export const SPORTS = [
   { id: "TENNIS", label: "Τένις", icon: "Tennis", motion: "swing" },
   { id: "MOTOR", label: "Μηχανοκίνητα", icon: "RaceFlag", motion: "wave" },
   { id: "VOLLEYBALL", label: "Βόλεϊ", icon: "Volleyball", motion: "roll" },
+  { id: "RUGBY", label: "Ράγκμπι", icon: "Rugby", motion: "flip" },
   { id: "AMERICAN_FOOTBALL", label: "NFL", icon: "AmericanFootball", motion: "flip" },
   { id: "HOCKEY", label: "NHL", icon: "Hockey", motion: "swing" },
   { id: "BASEBALL", label: "MLB", icon: "Baseball", motion: "roll" },
+  { id: "MMA", label: "Μαχητικά", icon: "Glove", motion: "bounce" },
+  { id: "GOLF", label: "Γκολφ", icon: "Golf", motion: "wave" },
+  { id: "LACROSSE", label: "Λακρός", icon: "Lacrosse", motion: "swing" },
+  { id: "AUSSIE_RULES", label: "Αυστραλιανό", icon: "Rugby", motion: "flip" },
 ];
 
 const soccer = (id, name, country) => ({ id, path: `soccer/${id}`, name, country, sport: "FOOTBALL", kind: "team" });
@@ -32,6 +37,18 @@ export const LEAGUES = [
   soccer("por.1", "Primeira Liga", "Πορτογαλία"),
   soccer("tur.1", "Süper Lig", "Τουρκία"),
   soccer("eng.2", "Championship", "Αγγλία"),
+  { id: "grl.4640", name: "Super League 2", country: "Ελλάδα", sport: "FOOTBALL", kind: "greek", finalAfter: 115, file: "lower" },
+  { id: "grl.5830", name: "Κύπελλο Ελλάδας", country: "Ελλάδα", sport: "FOOTBALL", kind: "greek", finalAfter: 115, file: "lower" },
+  { id: "grl.5842", name: "Γ' Εθνική · 1ος Όμιλος", country: "Ελλάδα", sport: "FOOTBALL", kind: "greek", finalAfter: 115, file: "lower", off: true },
+  { id: "grl.5843", name: "Γ' Εθνική · 2ος Όμιλος", country: "Ελλάδα", sport: "FOOTBALL", kind: "greek", finalAfter: 115, file: "lower", off: true },
+  { id: "grl.5844", name: "Γ' Εθνική · 3ος Όμιλος", country: "Ελλάδα", sport: "FOOTBALL", kind: "greek", finalAfter: 115, file: "lower", off: true },
+  { id: "grl.5845", name: "Γ' Εθνική · 4ος Όμιλος", country: "Ελλάδα", sport: "FOOTBALL", kind: "greek", finalAfter: 115, file: "lower", off: true },
+  { id: "grl.5846", name: "Γ' Εθνική · 5ος Όμιλος", country: "Ελλάδα", sport: "FOOTBALL", kind: "greek", finalAfter: 115, file: "lower", off: true },
+  { id: "grl.5847", name: "Γ' Εθνική · 6ος Όμιλος", country: "Ελλάδα", sport: "FOOTBALL", kind: "greek", finalAfter: 115, file: "lower", off: true },
+  { id: "grl.5963", name: "Γ' Εθνική · 7ος Όμιλος", country: "Ελλάδα", sport: "FOOTBALL", kind: "greek", finalAfter: 115, file: "lower", off: true },
+  { id: "grl.5964", name: "Γ' Εθνική · 8ος Όμιλος", country: "Ελλάδα", sport: "FOOTBALL", kind: "greek", finalAfter: 115, file: "lower", off: true },
+  { id: "grl.5965", name: "Γ' Εθνική · 9ος Όμιλος", country: "Ελλάδα", sport: "FOOTBALL", kind: "greek", finalAfter: 115, file: "lower", off: true },
+  { id: "grl.5966", name: "Γ' Εθνική · 10ος Όμιλος", country: "Ελλάδα", sport: "FOOTBALL", kind: "greek", finalAfter: 115, file: "lower", off: true },
   { id: "gbl", name: "Stoiximan GBL", country: "Ελλάδα", sport: "BASKETBALL", kind: "greek", finalAfter: 150, towns: GBL_TOWNS },
   { id: "elite", name: "Elite League", country: "Ελλάδα", sport: "BASKETBALL", kind: "greek", finalAfter: 90, towns: OPEN_TOWNS },
   { id: "volley-men", name: "Volley League Ανδρών", country: "Ελλάδα", sport: "VOLLEYBALL", kind: "greek", finalAfter: 90, towns: OPEN_TOWNS },
@@ -48,7 +65,38 @@ export const LEAGUES = [
   { id: "mlb", path: "baseball/mlb", name: "MLB", country: "ΗΠΑ", sport: "BASEBALL", kind: "team" },
 ];
 
-export const leagueById = (id) => LEAGUES.find((league) => league.id === id);
+let extraLeagues = [];
+const KIND_OF = { TENNIS: "tennis", MOTOR: "racing", MMA: "fights", GOLF: "golf" };
+
+/** The full catalog of competitions, for the "what I follow" screen. */
+export async function loadCatalog() {
+  if (extraLeagues.length) return extraLeagues;
+  const list = await fetch("data/catalog.json").then((r) => (r.ok ? r.json() : [])).catch(() => []);
+  const known = new Set(LEAGUES.map((league) => league.path || league.id));
+  const isEuro = (id) => id === "basketball/euroleague" || id === "basketball/eurocup";
+  extraLeagues = list.filter((c) => !isEuro(c.i)).map((c) => {
+    const path = c.i.includes("/") ? c.i : `soccer/${c.i}`;
+    return { id: c.i, path, name: c.n, sport: c.s, kind: KIND_OF[c.s] || "team", extra: true };
+  }).filter((league) => !known.has(league.path) && !known.has(league.id));
+  return extraLeagues;
+}
+
+export const leagueById = (id) => LEAGUES.find((league) => league.id === id) || extraLeagues.find((league) => league.id === id);
+
+const readChoice = (key) => { try { return new Set(JSON.parse(localStorage.getItem(key)) || []); } catch { return new Set(); } };
+export const followed = { on: readChoice("kerkida-leagues-on"), off: readChoice("kerkida-leagues-off") };
+export const isFollowed = (league) => (league.off || league.extra ? followed.on.has(league.id) : !followed.off.has(league.id));
+export function setFollowed(league, value) {
+  const byDefault = !(league.off || league.extra);
+  followed.on.delete(league.id);
+  followed.off.delete(league.id);
+  if (value !== byDefault) (value ? followed.on : followed.off).add(league.id);
+  try {
+    localStorage.setItem("kerkida-leagues-on", JSON.stringify([...followed.on]));
+    localStorage.setItem("kerkida-leagues-off", JSON.stringify([...followed.off]));
+  } catch { /* Private browsing can refuse storage. */ }
+}
+export const leaguesFor = (sport) => [...LEAGUES, ...extraLeagues].filter((league) => league.sport === sport && isFollowed(league));
 export const hasTable = (league) => league?.kind === "team" || league?.kind === "greek";
 
 const memory = new Map();
@@ -186,6 +234,28 @@ function racingMatches(event, league) {
   }).filter(Boolean);
 }
 
+function fightMatches(event, league) {
+  const ref = { id: league.id, name: event.name || league.name };
+  return (event.competitions || []).map((competition) => {
+    const sides = [...(competition.competitors || [])].sort((a, b) => (a.order ?? 9) - (b.order ?? 9));
+    if (sides.length !== 2 || !person(sides[0]) || !person(sides[1])) return null;
+    const status = statusOf(competition.status?.type);
+    const winner = sides.find((side) => side.winner);
+    return { id: `${league.id}~${competition.id}`, sport: league.sport, league: ref, home: { name: person(sides[0]) }, away: { name: person(sides[1]) },
+      kickoff: Date.parse(competition.date), status, detail: "", homeScore: null, awayScore: null, result: winner ? person(winner) : "", venue: competition.venue?.fullName || null };
+  }).filter(Boolean);
+}
+
+function golfMatch(event, league) {
+  const competition = event.competitions?.[0];
+  if (!competition) return [];
+  const status = statusOf(competition.status?.type || event.status?.type);
+  const leader = [...(competition.competitors || [])].sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999))[0];
+  const name = event.shortName || event.name;
+  return [{ id: `${league.id}~${event.id}`, sport: "GOLF", league: { id: league.id, name: league.name }, title: name, home: { name }, away: { name: league.name },
+    kickoff: Date.parse(competition.date || event.date), status, detail: "", homeScore: null, awayScore: null, result: status !== "SCHEDULED" && leader ? person(leader) : "", venue: null }];
+}
+
 function seasonCode(code, date) {
   return `${code}${date.getMonth() >= 6 ? date.getFullYear() : date.getFullYear() - 1}`;
 }
@@ -217,7 +287,8 @@ async function euroGames(league, date) {
 }
 
 let greekFile;
-const greekData = () => (greekFile ??= fetch("data/greek.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((d) => d || { updated: 0, leagues: [] }));
+const loadFile = (name) => fetch(`data/${name}`, { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+const greekData = () => (greekFile ??= Promise.all([loadFile("greek.json"), loadFile("lower.json")]).then(([open, lower]) => ({ leagues: [...(open?.leagues || []), ...(lower?.leagues || [])] })));
 
 async function greekLeague(id) {
   const data = await greekData();
@@ -236,7 +307,8 @@ function greekMatch(game, league) {
     away: game.away,
     kickoff: game.kickoff,
     noTime: !!game.noTime,
-    status,
+    ground: game.ground || null,
+    status: game.postponed ? "POSTPONED" : status,
     detail: `Αγωνιστική ${game.round}`,
     homeScore: show ? game.homeScore ?? null : null,
     awayScore: show ? game.awayScore ?? null : null,
@@ -250,7 +322,7 @@ function greekMatch(game, league) {
 async function leagueDay(league, date) {
   if (league.kind === "greek") {
     const data = await greekLeague(league.id);
-    return data.games.filter((game) => sameDay(game.kickoff, date)).map((game) => greekMatch(game, league));
+    return (data.games || []).filter((game) => sameDay(game.kickoff, date)).map((game) => greekMatch(game, league));
   }
   if (league.kind === "euro") return (await euroGames(league, date)).filter((game) => sameDay(game.kickoff, date));
   // A local evening can fall on the source's previous or next day.
@@ -262,7 +334,9 @@ async function leagueDay(league, date) {
     for (const event of board.events || []) {
       const games = league.kind === "tennis" ? tennisMatches(event, league)
         : league.kind === "racing" ? racingMatches(event, league)
-          : [teamMatch(event, league)];
+          : league.kind === "fights" ? fightMatches(event, league)
+            : league.kind === "golf" ? golfMatch(event, league)
+              : [teamMatch(event, league)];
       for (const game of games) if (game && sameDay(game.kickoff, date)) found.set(game.id, game);
     }
   }
@@ -312,18 +386,41 @@ export async function matchDetails(leagueId, eventId) {
     assist: event.participants?.[1]?.athlete?.displayName || "",
     side: event.team?.id === match.home.id ? "home" : event.team?.id === match.away.id ? "away" : "",
   }));
+  const changes = {};
+  for (const event of root.keyEvents || []) {
+    if (!/substitution/i.test(event.type?.text || "")) continue;
+    const at = parseInt(event.clock?.displayValue, 10);
+    if (Number.isNaN(at)) continue;
+    for (const person_ of event.participants || []) if (person_.athlete?.id) changes[person_.athlete.id] = at;
+  }
+  const liveMinute = parseInt(match.clock, 10);
+  const length = match.status === "FINISHED" ? 90 : Number.isNaN(liveMinute) ? 0 : liveMinute;
+  match.length = length;
   const lineup = (id) => {
     const roster = (root.rosters || []).find((r) => r.team?.id === id);
     if (!roster?.roster?.length) return null;
     return {
       formation: roster.formation,
-      players: roster.roster.map((entry) => ({
-        name: entry.athlete?.displayName || "",
-        jersey: entry.jersey || "",
-        starter: !!entry.starter,
-        place: entry.formationPlace ? Number(entry.formationPlace) : null,
-        position: entry.position?.abbreviation || "",
-      })),
+      players: roster.roster.map((entry) => {
+        const athlete = entry.athlete?.id;
+        const changedAt = changes[athlete];
+        const minutes = entry.starter
+          ? (entry.subbedOut ? Math.min(changedAt ?? length, length) : length)
+          : entry.subbedIn ? Math.max(1, length - (changedAt ?? length)) : 0;
+        const href = entry.athlete?.headshot?.href;
+        const small = href?.match(/^https:\/\/a\.espncdn\.com(\/i\/headshots\/.+\.png)$/);
+        return {
+          id: athlete,
+          name: entry.athlete?.displayName || "",
+          jersey: entry.jersey || "",
+          starter: !!entry.starter,
+          place: entry.formationPlace ? Number(entry.formationPlace) : null,
+          position: entry.position?.abbreviation || "",
+          minutes,
+          stats: Object.fromEntries((entry.stats || []).filter((s) => s.name && s.value !== undefined).map((s) => [s.name, s.value])),
+          photo: small ? `https://a.espncdn.com/combiner/i?img=${small[1]}&w=160&h=160&scale=crop` : href || null,
+        };
+      }),
     };
   };
   return { match, events, home: lineup(match.home.id), away: lineup(match.away.id) };
@@ -336,6 +433,7 @@ export async function standings(leagueId) {
     return rows.length ? [{ name: league.name, rows }] : [];
   }
   if (!league?.path || league.kind !== "team") return [];
+  if (league.sport === "VOLLEYBALL") return [];
   const root = await getJson(`${STANDINGS}/${league.path}/standings`, 300_000);
   const groups = root.children?.length ? root.children : [root];
   return groups.map((group) => ({
@@ -355,6 +453,29 @@ export async function standings(leagueId) {
     }).sort((a, b) => a.rank - b.rank),
   })).filter((group) => group.rows.length);
 }
+
+/** Finished games of a club across recent seasons, for form and head-to-head. */
+export async function teamHistory(leagueId, teamId, seasons = 5) {
+  const league = leagueById(leagueId);
+  if (!league) return [];
+  if (league.kind === "greek") {
+    const data = await greekLeague(leagueId);
+    return (data.games || []).filter((g) => g.home.id === teamId || g.away.id === teamId).map((g) => greekMatch(g, league));
+  }
+  if (!league.path) return [];
+  const now = new Date();
+  const current = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+  const lists = await Promise.all(Array.from({ length: seasons }, (_, back) => getJson(`${SITE}/${league.path}/teams/${encodeURIComponent(teamId)}/schedule?season=${current - back}`, 43_200_000)
+    .then((root) => (root.events || []).map((event) => teamMatch(event, league)).filter(Boolean)).catch(() => [])));
+  const seen = new Map();
+  lists.flat().forEach((game) => seen.set(game.eventId, game));
+  return [...seen.values()];
+}
+
+let fplFile;
+let photoFile;
+export const fantasyData = () => (fplFile ??= loadFile("fpl.json").then((d) => d || { players: [], teams: [], live: {} }));
+export const commonsPhotos = () => (photoFile ??= loadFile("photos.json").then((d) => d || {}));
 
 export async function teamSchedule(leagueId, teamId) {
   const league = leagueById(leagueId);
