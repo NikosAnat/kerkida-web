@@ -708,7 +708,7 @@ async function viewWeekend() {
     return list.length ? `<h2 class="section">${esc(longDay(day.getTime()))}</h2><section class="card">${list.map(render).join("")}</section>` : "";
   }).join("");
   const picks = plan.filter((e) => e.isPick && e.match && e.match.kickoff > nowMs);
-  view.innerHTML = `${pageHead("Το Σαββατοκύριακό μου")}${place ? `<p class="fresh">Κοντά σε: ${esc(place.name)}, έως ${state.radius} km</p>` : '<p class="notice">Διάλεξε περιοχή στο <a href="#/nearby">Κοντά μου</a> για αγώνες που μπορείς να πας.</p>'}${picks.length ? '<div class="actions"><button class="chip" data-week-ics>' + icon("Calendar", 16) + "Στο ημερολόγιο</button></div>" : ""}${sections || message("Δεν έχει τίποτα ακόμα", "Πρόσθεσε ομάδες, κανάλια ή περιοχή.", "Calendar")}`;
+  view.innerHTML = `${pageHead("Το Σαββατοκύριακό μου")}${place ? `<p class="fresh">Κοντά σε: ${esc(place.name)}, έως ${state.radius} km</p>` : '<p class="notice">Διάλεξε περιοχή στο <a href="#/nearby">Κοντά μου</a> για αγώνες που μπορείς να πας.</p>'}${picks.length ? '<div class="actions"><button class="chip" data-week-ics>' + icon("Calendar", 16) + "Στο ημερολόγιο</button></div>" : ""}${sections || message("Δεν έχει τίποτα ακόμα", "Πρόσθεσε ομάδες, κανάλια ή περιοχή. Το πρόγραμμα TV βγαίνει λίγες μέρες πριν.", "Calendar")}`;
   view.querySelector("[data-week-ics]")?.addEventListener("click", () => downloadIcs(picks.map((e) => ({ ...e.match, channel: e.channels[0] })), "Kerkida Weekend"));
 }
 

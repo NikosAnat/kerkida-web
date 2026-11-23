@@ -99,7 +99,7 @@ export function buildPreview(match, homeGames, awayGames, rows = [], absences = 
     if (gap <= 3) table = gap ? `Μόλις ${gap} βαθμοί τις χωρίζουν στη βαθμολογία` : "Είναι ισόβαθμες στη βαθμολογία";
     else if (gap >= 10) table = `${a.points > b.points ? match.home.name : match.away.name}: +${gap} βαθμοί στη βαθμολογία`;
   }
-  const key = (team, list) => { const p = list.find((x) => x.starts >= 5); return p ? `${team}: απουσιάζει ο ${p.name} (${p.starts} βασικός)` : null; };
+  const key = (team, list) => { const p = list.find((x) => x.starts >= 5); return p ? `${team}: εκτός ${p.name} (βασικός σε ${p.starts} αγώνες)` : null; };
   const insights = [streak(match.home.name, homeForm), streak(match.away.name, awayForm), table, key(match.home.name, absences.home), key(match.away.name, absences.away),
     goalsLine(match.home.name, match.home.id, homeRecent), goalsLine(match.away.name, match.away.id, awayRecent)].filter(Boolean).slice(0, 3);
   return { homeForm, awayForm, insights, lastHome: homeRecent[0] || null, lastAway: awayRecent[0] || null };
